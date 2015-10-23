@@ -112,10 +112,6 @@ struct xcb_colors_t {
 };
 struct xcb_colors_t colors;
 
-/* Indicates whether there is any difference between focus_bar_* and bar_*, or
- * between focus_sep_fg and sep_fg. */
-bool focus_colors_differ;
-
 /* Horizontal offset between a workspace label and button borders */
 static const int ws_hoff_px = 4;
 
@@ -191,78 +187,63 @@ static void draw_separator(i3_output *output, uint32_t x, struct status_block *b
     }
 }
 
-/*
- * Redraws the statusline to the output's statusline_buffer
- *
- */
-void draw_statusline(i3_output *output, uint32_t max_width, bool use_focus_colors) {
-    bool use_short_text = false;
-    uint32_t width;
+uint32_t predict_statusline_length(bool use_short_text) {
+    uint32_t width = 0;
     struct status_block *block;
 
-    /* Predict the text width of all blocks (in pixels). */
-    bool fit = false;
-    while (!fit) {
-        fit = true;
-        width = 0;
-        TAILQ_FOREACH(block, &statusline_head, blocks) {
-            i3String *text = block->full_text;
-            if (use_short_text && block->short_text != NULL)
-                text = block->short_text;
-            if (i3string_get_num_bytes(text) == 0)
-                continue;
+    TAILQ_FOREACH(block, &statusline_head, blocks) {
+        i3String *text = block->full_text;
+        if (use_short_text && block->short_text != NULL)
+            text = block->short_text;
+        if (i3string_get_num_bytes(text) == 0)
+            continue;
 
-            block->width = predict_text_width(text);
-            if (block->border)
-                block->width += logical_px(2);
+        block->width = predict_text_width(text);
+        if (block->border)
+            block->width += logical_px(2);
 
-            /* Compute offset and append for text aligment in min_width. */
-            if (block->min_width <= block->width) {
-                block->x_offset = 0;
-                block->x_append = 0;
-            } else {
-                uint32_t padding_width = block->min_width - block->width;
-                switch (block->align) {
-                    case ALIGN_LEFT:
-                        block->x_append = padding_width;
-                        break;
-                    case ALIGN_RIGHT:
-                        block->x_offset = padding_width;
-                        break;
-                    case ALIGN_CENTER:
-                        block->x_offset = padding_width / 2;
-                        block->x_append = padding_width / 2 + padding_width % 2;
-                        break;
-                }
-            }
-
-            width += block->width + block->x_offset + block->x_append;
-
-            /* If this is not the last block, add some pixels for a separator. */
-            if (TAILQ_NEXT(block, blocks) != NULL)
-                width += block->sep_block_width;
-
-            if (!use_short_text && width > max_width) {
-                // We can't fit it all with long text, so let's try short text instead
-                use_short_text = true;
-                fit = false;
-                break;
+        /* Compute offset and append for text aligment in min_width. */
+        if (block->min_width <= block->width) {
+            block->x_offset = 0;
+            block->x_append = 0;
+        } else {
+            uint32_t padding_width = block->min_width - block->width;
+            switch (block->align) {
+                case ALIGN_LEFT:
+                    block->x_append = padding_width;
+                    break;
+                case ALIGN_RIGHT:
+                    block->x_offset = padding_width;
+                    break;
+                case ALIGN_CENTER:
+                    block->x_offset = padding_width / 2;
+                    block->x_append = padding_width / 2 + padding_width % 2;
+                    break;
             }
         }
+
+        width += block->width + block->x_offset + block->x_append;
+
+        /* If this is not the last block, add some pixels for a separator. */
+        if (TAILQ_NEXT(block, blocks) != NULL)
+            width += block->sep_block_width;
     }
 
-    output->statusline_width = width;
-    output->statusline_short_text = use_short_text;
+    return width;
+}
+
+/*
+ * Redraws the statusline to the output's statusline_buffer
+ */
+void draw_statusline(i3_output *output, uint32_t clip_left, bool use_focus_colors, bool use_short_text) {
+    struct status_block *block;
 
     color_t bar_color = use_focus_colors ? colors.focus_bar_bg : colors.bar_bg;
     draw_util_clear_surface(&output->statusline_buffer, bar_color);
 
-    uint32_t x = 0;
-    if (width > max_width) {
-        // Use unsigned integer wraparound to clip off the left side.
-        // I have been assured by FreeNode#xcb that this is safe.
-        x = max_width - width;
-    }
+    // Use unsigned integer wraparound to clip off the left side.
+    // XCB will ignore any draws that end up outside the pixmap.
+    uint32_t x = 0 - clip_left;
 
     /* Draw the text of each block */
     TAILQ_FOREACH(block, &statusline_head, blocks) {
@@ -435,16 +416,6 @@ void init_colors(const struct xcb_color_strings_t *new_colors) {
     PARSE_COLOR_FALLBACK(focus_sep_fg, sep_fg);
 #undef PARSE_COLOR_FALLBACK
 
-    if (colors.focus_bar_bg.colorpixel != colors.bar_bg.colorpixel) {
-        focus_colors_differ = true;
-    } else if (colors.focus_bar_fg.colorpixel != colors.bar_fg.colorpixel) {
-        focus_colors_differ = true;
-    } else if (colors.focus_sep_fg.colorpixel != colors.sep_fg.colorpixel) {
-        focus_colors_differ = true;
-    } else {
-        focus_colors_differ = false;
-    }
-
     init_tray_colors();
     xcb_flush(xcb_connection);
 }
@@ -496,7 +467,7 @@ void handle_button(xcb_button_press_event_t *event) {
         int offset = walk->rect.w - walk->statusline_width - tray_width - logical_px(sb_hoff_px);
         int32_t statusline_x = x - offset;
 
-        if (statusline_x >= 0 && (size_t)statusline_x < walk->statusline_width) {
+        if (statusline_x >= 0 && statusline_x < walk->statusline_width) {
             struct status_block *block;
             int sep_offset_remainder = 0;
 
@@ -1194,16 +1165,6 @@ char *init_xcb_early() {
     visual_type = get_visualtype(root_screen);
 
     /* The various watchers to communicate with xcb */
-    /* We draw the statusline to a seperate pixmap, because it looks the same on all bars and
-     * this way, we can choose to crop it */
-    xcb_pixmap_t statusline_id = xcb_generate_id(xcb_connection);
-    xcb_void_cookie_t sl_pm_cookie = xcb_create_pixmap_checked(xcb_connection,
-                                                               depth,
-                                                               statusline_id,
-                                                               xcb_root,
-                                                               root_screen->width_in_pixels,
-                                                               root_screen->height_in_pixels);
-
     xcb_io = smalloc(sizeof(ev_io));
     xcb_prep = smalloc(sizeof(ev_prepare));
     xcb_chk = smalloc(sizeof(ev_check));
@@ -1220,9 +1181,6 @@ char *init_xcb_early() {
     get_atoms();
 
     char *path = root_atom_contents("I3_SOCKET_PATH", xcb_connection, screen);
-
-    if (xcb_request_failed(sl_pm_cookie, "Could not allocate statusline buffer"))
-        exit(EXIT_FAILURE);
 
     return path;
 }
@@ -1850,6 +1808,9 @@ void reconfig_windows(bool redraw_bars) {
 void draw_bars(bool unhide) {
     DLOG("Drawing bars...\n");
 
+    uint32_t full_statusline_width = predict_statusline_length(false);
+    uint32_t short_statusline_width = predict_statusline_length(true);
+
     i3_output *outputs_walk;
     SLIST_FOREACH(outputs_walk, outputs, slist) {
         int workspace_width = 0;
@@ -1863,20 +1824,18 @@ void draw_bars(bool unhide) {
             reconfig_windows(false);
         }
 
-        bool output_needs_focus_colors = false;
-        if (focus_colors_differ) {
-            i3_ws *ws_walk;
-            TAILQ_FOREACH(ws_walk, outputs_walk->workspaces, tailq) {
-                if (ws_walk->focused) {
-                    output_needs_focus_colors = true;
-                    break;
-                }
+        bool use_focus_colors = false;
+        i3_ws *ws_walk;
+        TAILQ_FOREACH(ws_walk, outputs_walk->workspaces, tailq) {
+            if (ws_walk->focused) {
+                use_focus_colors = true;
+                break;
             }
         }
 
         /* First things first: clear the backbuffer */
         draw_util_clear_surface(&(outputs_walk->buffer),
-                                output_needs_focus_colors ? colors.focus_bar_bg : colors.bar_bg);
+                                use_focus_colors ? colors.focus_bar_bg : colors.bar_bg);
 
         if (!config.disable_ws) {
             i3_ws *ws_walk;
@@ -1962,14 +1921,27 @@ void draw_bars(bool unhide) {
 
             int tray_width = get_tray_width(outputs_walk->trayclients);
             uint32_t max_statusline_width = outputs_walk->rect.w - workspace_width - tray_width - 2 * logical_px(sb_hoff_px);
+            uint32_t clip_left = 0;
+            uint32_t statusline_width = full_statusline_width;
+            bool use_short_text = false;
 
-            draw_statusline(outputs_walk, max_statusline_width, output_needs_focus_colors);
+            if (statusline_width > max_statusline_width) {
+                statusline_width = short_statusline_width;
+                use_short_text = true;
+                if (statusline_width > max_statusline_width) {
+                    clip_left = statusline_width - max_statusline_width;
+                }
+            }
 
-            int16_t visible_statusline_width = MIN(outputs_walk->statusline_width, max_statusline_width);
-            int x_dest = (int16_t)(outputs_walk->rect.w - tray_width - logical_px(sb_hoff_px) - visible_statusline_width);
+            int16_t visible_statusline_width = MIN(statusline_width, max_statusline_width);
+            int x_dest = outputs_walk->rect.w - tray_width - logical_px(sb_hoff_px) - visible_statusline_width;
 
+            draw_statusline(outputs_walk, clip_left, use_focus_colors, use_short_text);
             draw_util_copy_surface(&outputs_walk->statusline_buffer, &outputs_walk->buffer, 0, 0,
                                    x_dest, 0, visible_statusline_width, (int16_t)bar_height);
+
+            outputs_walk->statusline_width = statusline_width;
+            outputs_walk->statusline_short_text = use_short_text;
         }
     }
 
