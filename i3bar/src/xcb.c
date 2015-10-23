@@ -313,8 +313,9 @@ void draw_statusline(i3_output* output, uint32_t max_width, bool use_focus_color
                                 bar_height - 2 * border_width - logical_px(2));
         }
 
-        draw_util_text(block->full_text, &output->statusline_buffer, fg_color, bg_color,
-                       x + block->x_offset + border_width, logical_px(ws_voff_px), block->width - 2 * border_width);
+        draw_util_text(text, &output->statusline_buffer, fg_color, bg_color,
+                       x + block->x_offset + border_width, logical_px(ws_voff_px),
+                       block->width - 2 * border_width);
         x += block->width + block->x_offset + block->x_append;
 
         /* If this is not the last block, draw a separator. */
