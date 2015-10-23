@@ -167,7 +167,7 @@ int get_tray_width(struct tc_head *trayclients) {
  * Draws a separator for the given block if necessary.
  *
  */
-static void draw_separator(i3_output* output, uint32_t x, struct status_block *block, bool use_focus_colors) {
+static void draw_separator(i3_output *output, uint32_t x, struct status_block *block, bool use_focus_colors) {
     color_t sep_fg = use_focus_colors ? colors.focus_sep_fg : colors.sep_fg;
     color_t bar_bg = use_focus_colors ? colors.focus_bar_bg : colors.bar_bg;
 
@@ -195,7 +195,7 @@ static void draw_separator(i3_output* output, uint32_t x, struct status_block *b
  * Redraws the statusline to the output's statusline_buffer
  *
  */
-void draw_statusline(i3_output* output, uint32_t max_width, bool use_focus_colors) {
+void draw_statusline(i3_output *output, uint32_t max_width, bool use_focus_colors) {
     bool use_short_text = false;
     uint32_t width;
     struct status_block *block;
@@ -206,7 +206,7 @@ void draw_statusline(i3_output* output, uint32_t max_width, bool use_focus_color
         fit = true;
         width = 0;
         TAILQ_FOREACH(block, &statusline_head, blocks) {
-            i3String* text = block->full_text;
+            i3String *text = block->full_text;
             if (use_short_text && block->short_text != NULL)
                 text = block->short_text;
             if (i3string_get_num_bytes(text) == 0)
@@ -266,7 +266,7 @@ void draw_statusline(i3_output* output, uint32_t max_width, bool use_focus_color
 
     /* Draw the text of each block */
     TAILQ_FOREACH(block, &statusline_head, blocks) {
-        i3String* text = block->full_text;
+        i3String *text = block->full_text;
         if (use_short_text && block->short_text != NULL)
             text = block->short_text;
         if (i3string_get_num_bytes(text) == 0)
@@ -282,7 +282,7 @@ void draw_statusline(i3_output* output, uint32_t max_width, bool use_focus_color
         } else {
             fg_color = colors.bar_fg;
         }
-        
+
         color_t bg_color = bar_color;
 
         int border_width = (block->border) ? logical_px(1) : 0;
@@ -501,7 +501,7 @@ void handle_button(xcb_button_press_event_t *event) {
             int sep_offset_remainder = 0;
 
             TAILQ_FOREACH(block, &statusline_head, blocks) {
-                i3String* text = block->full_text;
+                i3String *text = block->full_text;
                 if (walk->statusline_short_text && block->short_text != NULL)
                     text = block->short_text;
                 if (i3string_get_num_bytes(text) == 0)
@@ -1668,11 +1668,11 @@ void reconfig_windows(bool redraw_bars) {
 
             /* The double-buffer we use to render the statusline before copying to buffer */
             xcb_void_cookie_t slpm_cookie = xcb_create_pixmap_checked(xcb_connection,
-                    depth,
-                    statusline_buffer_id,
-                    bar_id,
-                    walk->rect.w,
-                    bar_height);
+                                                                      depth,
+                                                                      statusline_buffer_id,
+                                                                      bar_id,
+                                                                      walk->rect.w,
+                                                                      bar_height);
 
             /* Set the WM_CLASS and WM_NAME (we don't need UTF-8) atoms */
             xcb_void_cookie_t class_cookie;
@@ -1723,7 +1723,7 @@ void reconfig_windows(bool redraw_bars) {
 
             if (xcb_request_failed(win_cookie, "Could not create window") ||
                 xcb_request_failed(pm_cookie, "Could not create pixmap") ||
-                    xcb_request_failed(slpm_cookie, "Could not create statusline pixmap") ||
+                xcb_request_failed(slpm_cookie, "Could not create statusline pixmap") ||
                 xcb_request_failed(dock_cookie, "Could not set dock mode") ||
                 xcb_request_failed(class_cookie, "Could not set WM_CLASS") ||
                 xcb_request_failed(name_cookie, "Could not set WM_NAME") ||
@@ -1797,11 +1797,11 @@ void reconfig_windows(bool redraw_bars) {
 
             DLOG("Recreating statusline buffer for output %s\n", walk->name);
             xcb_void_cookie_t slpm_cookie = xcb_create_pixmap_checked(xcb_connection,
-                    depth,
-                    walk->statusline_buffer.id,
-                    walk->bar.id,
-                    walk->rect.w,
-                    bar_height);
+                                                                      depth,
+                                                                      walk->statusline_buffer.id,
+                                                                      walk->bar.id,
+                                                                      walk->rect.w,
+                                                                      bar_height);
 
             draw_util_surface_free(&(walk->bar));
             draw_util_surface_free(&(walk->buffer));
@@ -1833,7 +1833,7 @@ void reconfig_windows(bool redraw_bars) {
             if (xcb_request_failed(cfg_cookie, "Could not reconfigure window") ||
                 xcb_request_failed(chg_cookie, "Could not change window") ||
                 xcb_request_failed(pm_cookie, "Could not create pixmap") ||
-                    xcb_request_failed(slpm_cookie, "Could not create statusline pixmap") ||
+                xcb_request_failed(slpm_cookie, "Could not create statusline pixmap") ||
                 xcb_request_failed(strut_cookie, "Could not set strut") ||
                 (redraw_bars && (xcb_request_failed(umap_cookie, "Could not unmap window") ||
                                  (config.hide_on_modifier == M_DOCK && xcb_request_failed(map_cookie, "Could not map window"))))) {
